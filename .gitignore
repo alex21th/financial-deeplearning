@@ -2,4 +2,11 @@
 .DS_Store
 
 # Data folder
+data/
 sample_data/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Python Cache
+__pycache__
