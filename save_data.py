@@ -15,14 +15,11 @@ DATASET_PREFIX = 'BTCUSD'
 SAVE_DATA = ''
 
 params = SimpleNamespace(
-    intraday_freq = pd.Timedelta('00:05:00'),
+    intraday_freq = pd.Timedelta('00:01:00'),
     target_vars = ['Close'],
-    # train_date = ('2017-05', '2019-06'),
-    # valid_date = ('2019-07', '2019-12'),
-    # test_date  = ('2020-01', '2020-09'),
-    train_date = ('2017-05', '2017-06'),
-    valid_date = ('2017-05', '2017-06'),
-    test_date  = ('2017-05', '2017-06'),
+    train_date = ('2017-05', '2019-07'),
+    valid_date = ('2019-07', '2020-01'),
+    test_date  = ('2020-01', '2020-10'),
     sample_date = ('2017-05', '2017-06')
 )
 
@@ -46,6 +43,7 @@ def save_data(df_name, dataset_dir, dataset_prefix, min_date, max_date, freq, sa
     df = average_ask_bid(df)  # Merge Ask and Bid
     df = ohlc_format(df)      # Format to OHLC
     df.to_hdf(f'{save_path}/{df_name}_data.h5', key='df', mode='w')
+    print(f'Number of {df_name} samples: {df.shape[0]}')
     print(f'Time elapsed: {strftime("%H:%M:%S", gmtime(time() - start))}')
 
 if __name__ == "__main__":
@@ -53,6 +51,6 @@ if __name__ == "__main__":
     SAVE_DATA = sys.argv[2]
 
     save_data('train', DATASET_DIR, DATASET_PREFIX, params.train_date[0], params.train_date[1], params.intraday_freq, SAVE_DATA)
-    # save_data('valid', DATASET_DIR, DATASET_PREFIX, params.valid_date[0], params.valid_date[1], params.intraday_freq, SAVE_DATA)
-    # save_data('test', DATASET_DIR, DATASET_PREFIX, params.test_date[0], params.test_date[1], params.intraday_freq, SAVE_DATA)
+    save_data('valid', DATASET_DIR, DATASET_PREFIX, params.valid_date[0], params.valid_date[1], params.intraday_freq, SAVE_DATA)
+    save_data('test', DATASET_DIR, DATASET_PREFIX, params.test_date[0], params.test_date[1], params.intraday_freq, SAVE_DATA)
 

@@ -1,4 +1,5 @@
-import os
+#!/usr/bin/env python
+
 import numpy as np
 import pandas as pd
 
@@ -13,78 +14,47 @@ from sklearn.preprocessing import MinMaxScaler
 from loader import *
 from bars import *
 
-DATASET_DIR = 'sample_data/'
+DATASET_DIR = 'datasets_1m/'
 DATASET_PREFIX = 'BTCUSD'
 MODEL_DIR = 'weights/'
 
 params = SimpleNamespace(
+    train_data = f'{DATASET_DIR}train_data.h5',
+    valid_data = f'{DATASET_DIR}valid_data.h5',
+    test_data = f'{DATASET_DIR}test_data.h5',
+    target_variables = ['Close'],
+    days_prediction = 1,
     batch_size = 128,
     epochs = 4,
-    intraday_freq = pd.Timedelta('00:05:00'),
-    target_vars = ['Close'],
-    train_date = ('2017-05', '2019-06'),
-    valid_date = ('2019-07', '2019-12'),
-    test_date  = ('2020-01', '2020-09'),
-    sample_date = ('2017-05', '2017-06'),
-    modelname = f'{MODEL_DIR}.pt',
+    hidden_size = 256,
     train = True,
     num_layers = 1,
     bidirectional = False,
-    lr = 0.001
+    lr = 0.001,
+    modelname = f'{MODEL_DIR}.pt'
 )
 
+# Read data from each dataset.
+df_train = pd.read_hdf(params.train_data, mode='r')
+df_valid = pd.read_hdf(params.valid_data, mode='r')
+df_test = pd.read_hdf(params.test_data, mode='r')
 
-def average_ask_bid(df):
-    d = {'avg_price': (df.ask + df.bid) / 2, 'avg_volume': (df.ask_volume + df.bid_volume) / 2}
-    avg = pd.concat(d.values(), axis=1, keys=d.keys())
-    df = pd.concat([df, avg], axis=1)
-    return df
-
-
-def ohlc_format(df):
-    df = df[['avg_price','avg_volume']]
-    df.columns = df.columns.droplevel()
-    df = df.rename(columns={'max': 'High', 'min': 'Low', 'first': 'Open', 'last': 'Close', 'sum': 'Volume'})
-    return df
-
-
-def plot_candlestick(df, N=None):
-    if N is not None:
-        first = np.random.randint(0, len(df)-N)
-        df = df[first:first+N]
-    mpf.plot(df, type='candle', style='charles', figratio=(25,8))
-
-
-def plot_candlestick_steps(df, window, steps=None):
-    max_steps = min(len(df), steps) if steps is not None else len(df)
-    fig , ax = plt.subplots(1, max_steps-1, figsize=(6,2))
-    for i in range(1, max_steps):
-        c_df = df[i-1:i-1+window]
-        mpf.plot(c_df, type='candle', style='charles', ax=ax[i-1])
-
-
-# Load and transform dataset
-print('Reading dataset...')
-start = time()
-df = df_load(DATASET_DIR, DATASET_PREFIX, params.sample_date[0], params.sample_date[1])
-df = get_timebars(df, params.intraday_freq)
-print(f'Time elapsed: {strftime("%H:%M:%S", gmtime(time()-start))}')
-
-# Merge Ask and Bid, and format to OHLC
-df = average_ask_bid(df)
-df = ohlc_format(df)
+# 5 by default because we use ALL variables as features: 'High','Low','Open','Close','Volume'.
+params.input_size = len(df_train.columns)
+params.output_size = len(params.target_variables)
 
 class PricesDataset(torch.utils.data.Dataset):
 
-    def __init__(self, df, target_vars, shift_days, scale_X=True):
+    def __init__(self, df: pd.DataFrame, target_vars, shift_days, scale_x=True):
         """Init function should not do any heavy lifting, but
             must initialize how many items are available in this data set.
         """
         self.shift_steps = shift_days * 60 * 24
+        # self.shift_steps = 1
         df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-self.shift_steps) / df[target_vars])
         self.df = df[0:-self.shift_steps].values
 
-        if scale_X:
+        if scale_x:
             X = MinMaxScaler().fit_transform(self.df[:, :-len(target_vars)])
             self.features = torch.from_numpy(X).float()
         else:
@@ -106,16 +76,14 @@ class PricesDataset(torch.utils.data.Dataset):
         return X, y
 
 
-training_set = PricesDataset(df=df, target_vars=['Close'], shift_days=1)
+training_set = PricesDataset(df=df_train, target_vars=params.target_variables, shift_days=params.days_prediction)
+training_generator = torch.utils.data.DataLoader(training_set, batch_size=params.batch_size)
 
-training_generator = torch.utils.data.DataLoader(training_set,
-                                                 batch_size=params.batch_size)
+validation_set = PricesDataset(df=df_valid, target_vars=params.target_variables, shift_days=params.days_prediction)
+validation_generator = torch.utils.data.DataLoader(validation_set, batch_size=params.batch_size)
 
-
-val_generator = torch.utils.data.DataLoader(x_test_scaled,
-                                                 batch_size=params.batch_size)
-
-
+test_set = PricesDataset(df=df_test, target_vars=params.target_variables, shift_days=params.days_prediction)
+test_generator = torch.utils.data.DataLoader(test_set, batch_size=params.batch_size)
 
 # Select device
 if torch.cuda.is_available():
@@ -123,7 +91,6 @@ if torch.cuda.is_available():
 else:
     device = torch.device('cpu')
     print("WARNING: Training without GPU can be very slow!")
-
 
 
 class LSTM_Forecaster(torch.nn.Module):
@@ -139,8 +106,6 @@ class LSTM_Forecaster(torch.nn.Module):
         output, _ = self.rnn(x)
         output = self.linear(output)
         return output
-
-
 
 
 
@@ -177,7 +142,7 @@ def train(model, optimizer, criterion, train_generator, log=False):
         if log:
             print(f'Train: iteration_number={niterations}, loss={loss.item():.2f}')
 
-    total_loss = total_loss / ntokens
+    total_loss = total_loss / niterations
 
     return total_loss
 
@@ -197,26 +162,17 @@ def validate(model, criterion, valid_generator):
             total_loss += loss.item()
             niterations += 1
 
-    total_loss = total_loss / ntokens
+    total_loss = total_loss / niterations
 
     return total_loss
 
 
 
-
-params.input_size = x_train_scaled.shape[1]
-params.hidden_size = 128
-params.output_size = y_train_scaled.shape[1]
-
-
-
 def get_model():
     model = LSTM_Forecaster(input_size = params.input_size,
-                            hidden_size = 512,
-                            #hidden_size = params.hidden_size,
+                            hidden_size = params.hidden_size,
                             output_size = params.output_size,
-                            num_layers = 1,
-                            #num_layers = params.num_layers,
+                            num_layers = params.num_layers,
                             bidirectional = params.bidirectional).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr = params.lr)
     criterion = torch.nn.MSELoss(reduction='sum')
@@ -244,7 +200,7 @@ epochs = params.epochs
 train_loss = []
 valid_loss = []
 time_per_epoch = []
-print(f'Training model-validation for {epochs} epochs')
+print(f'Training model and validation for {epochs} epochs')
 start = time()
 
 for epoch in range(1, epochs + 1):
