@@ -25,6 +25,7 @@ params = SimpleNamespace(
     target_variables = ['Close'],
     days_prediction = 1,
     batch_size = 128,
+    sequence_length = 250,
     epochs = 4,
     hidden_size = 256,
     train = True,
@@ -45,7 +46,7 @@ params.output_size = len(params.target_variables)
 
 class PricesDataset(torch.utils.data.Dataset):
 
-    def __init__(self, df: pd.DataFrame, target_vars, shift_days, scale_x=True):
+    def __init__(self, df: pd.DataFrame, target_vars, shift_days, scale_x=True, seq_len=1):
         """Init function should not do any heavy lifting, but
             must initialize how many items are available in this data set.
         """
@@ -61,29 +62,32 @@ class PricesDataset(torch.utils.data.Dataset):
             self.features = torch.from_numpy(self.df[:, :-len(target_vars)]).float()
 
         self.labels = torch.from_numpy(self.df[:, -len(target_vars):]).float()
+        self.seq_len = seq_len
 
     def __len__(self):
         """return number of points in our dataset"""
-        return len(self.df)
+        return self.features.__len__() - self.seq_len
+        # return len(self.df)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, index):
         """ Here we have to return the item requested by `idx`
             The PyTorch DataLoader class will use this method to make an iterable for
             our training or validation loop.
         """
-        X = self.features[idx]
-        y = self.labels[idx]
+        X = self.features[index:index + self.seq_len]
+        y = self.labels[index:index + self.seq_len]
         return X, y
 
 
-training_set = PricesDataset(df=df_train, target_vars=params.target_variables, shift_days=params.days_prediction)
+training_set = PricesDataset(df=df_train, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
 training_generator = torch.utils.data.DataLoader(training_set, batch_size=params.batch_size)
 
-validation_set = PricesDataset(df=df_valid, target_vars=params.target_variables, shift_days=params.days_prediction)
+validation_set = PricesDataset(df=df_valid, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
 validation_generator = torch.utils.data.DataLoader(validation_set, batch_size=params.batch_size)
 
-test_set = PricesDataset(df=df_test, target_vars=params.target_variables, shift_days=params.days_prediction)
+test_set = PricesDataset(df=df_test, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
 test_generator = torch.utils.data.DataLoader(test_set, batch_size=params.batch_size)
+
 
 # Select device
 if torch.cuda.is_available():
@@ -91,7 +95,7 @@ if torch.cuda.is_available():
 else:
     device = torch.device('cpu')
     print("WARNING: Training without GPU can be very slow!")
-
+# device = torch.device('cpu')
 
 class LSTM_Forecaster(torch.nn.Module):
 
@@ -208,12 +212,12 @@ for epoch in range(1, epochs + 1):
     train_loss.append(loss)
     print(f'| epoch {epoch:03d} | train loss={loss:.2f}')
 
-    loss = validate(model, criterion, valid_generator)
+    loss = validate(model, criterion, validation_generator)
     valid_loss.append(loss)
     print(f'| epoch {epoch:03d} | valid loss={loss:.2f}')
 
     time_per_epoch.append(time() - start)
-    print(f'---------------------------------| epoch {epoch:03d} | time {strftime("%H:%M:%S", gmtime(time()-start))} |---------------------------------')
+    print(f'---------------------------------| end epoch {epoch:03d} | time {strftime("%H:%M:%S", gmtime(time()-start))} |---------------------------------')
 
     model_name = f'full_network_{epoch}epoch'
     torch.save(model.state_dict(), f'weights/{model_name}.pt')

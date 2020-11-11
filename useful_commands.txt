@@ -1,0 +1,20 @@
+
+# Execute script on SSH Server.
+nohup python3 train.py > train.log &
+
+# Save data script.
+python3 save_data.py ../../footanalytics/projects/data/dukascopy/ datasets_1m/
+
+# Check GPU memory.
+watch -n0.1 nvidia-smi
+
+# Clear PyCharms variables.
+globals().clear()
+
+## PyTorch
+
+# See shape of DataLoader object.
+data, target = next(iter(dataloader))
+print(data.shape)
+print(target.shape)
+
