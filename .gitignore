@@ -4,6 +4,10 @@
 # Data folder
 data/
 sample_data/
+dataset/
+
+# PyCharm
+.idea/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
