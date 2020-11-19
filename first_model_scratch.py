@@ -19,11 +19,13 @@ DATASET_PREFIX = 'BTCUSD'
 MODEL_DIR = 'weights/'
 
 params = SimpleNamespace(
+    intraday_freq = pd.Timedelta('00:01:00'),
     train_data = f'{DATASET_DIR}train_data.h5',
     valid_data = f'{DATASET_DIR}valid_data.h5',
     test_data = f'{DATASET_DIR}test_data.h5',
     target_variables = ['Close'],
-    days_prediction = 1,
+    # target_variables = ['Open','Close'],
+    predict_at_time = pd.Timedelta('00:10:00'),
     batch_size = 128,
     sequence_length = 250,
     epochs = 4,
@@ -79,6 +81,90 @@ class PricesDataset(torch.utils.data.Dataset):
         return X, y
 
 
+class FixedDataset(torch.utils.data.Dataset):
+
+    def __init__(self, X, y, context_length, target_length):
+        self.X = X
+        self.y = y
+        self.context_length = context_length
+        self.target_length = target_length
+        self.length = (self.X.shape[0] - self.context_length) // self.target_length
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        i0 = idx*self.target_length
+        i1 = idx*self.target_length + self.context_length + self.target_length
+
+        t0 = i0 + self.context_length
+        t1 = i1
+
+        input = self.X[i0:i1]
+        target = self.y[t0:t1]
+
+        assert target.shape[0] == self.target_length
+
+        return input, target
+
+def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta):
+    assert predict_at.seconds % freq.seconds == 0
+    shift_steps = predict_at.seconds // freq.seconds
+    df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars])
+    df = df[0:-shift_steps].values  # Pandas to NumPy array.
+
+    # TODO
+    # Scale data!
+
+    return df
+
+df_train = add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+
+tr_set = FixedDataset(X = df_train[:,:params.input_size], y = df_train[:,-params.output_size:], context_length=100, target_length=10)
+
+
+
+
+
+
+tr_set = FixedDataset(X = np.arange(0,20), y = np.arange(1,21), context_length=3, target_length=2)
+
+def titem(idx):
+    X, y = tr_set.__getitem__(idx)
+    print(f'{X} \nShape: {X.shape}')
+    print(f'{y} \nShape: {y.shape}')
+
+tr_set = FixedDataset(X = df.values, y = df.values[:,3], context_length=100, target_length=10)
+tr_generator = torch.utils.data.DataLoader(tr_set, batch_size=128)  # Converts NumPy arrays to "torch.Tensor" automatically.
+
+
+X, y = next(iter(tr_generator))
+X, y = X.to(device), y.to(device)
+
+model = LSTM_Forecaster(input_size=5, hidden_size=256, output_size=params.output_size, num_layers=1, bidirectional=False).to(device)
+
+out = model(X.float())
+print(f'                    BATCH #1')
+print(f'Input X shape:      {X.shape}')
+print(f'Output model shape: {out.shape}')
+print(f'Targets y shape:    {y.shape}')
+
+criterion = torch.nn.MSELoss(reduction='mean')
+criterion = torch.nn.MSELoss()
+loss = criterion(out[:,-10:], y)
+# loss = criterion(out[:,-10:], torch.reshape(y, (y.shape[0], y.shape[1], 1)))
+loss
+
+kk = 0
+for i, (data, target) in enumerate(tr_generator):
+    #print(f'Batch num: {i}')
+    #print(f'{data} \nShape: {data.shape}')
+    #print(f'{target} \nShape: {target.shape}')
+    kk += 1
+    if i == 7893:
+        print(i)
+print(kk)
+
 training_set = PricesDataset(df=df_train, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
 training_generator = torch.utils.data.DataLoader(training_set, batch_size=params.batch_size)
 
@@ -103,7 +189,7 @@ class LSTM_Forecaster(torch.nn.Module):
         super().__init__()
 
         self.hidden_size = hidden_size
-        self.rnn = nn.LSTM(input_size, hidden_size, num_layers, bidirectional=bidirectional)
+        self.rnn = nn.LSTM(input_size, hidden_size, num_layers, bidirectional=bidirectional, batch_first=True)
         self.linear = torch.nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
@@ -179,7 +265,8 @@ def get_model():
                             num_layers = params.num_layers,
                             bidirectional = params.bidirectional).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr = params.lr)
-    criterion = torch.nn.MSELoss(reduction='sum')
+    #criterion = torch.nn.MSELoss(reduction='sum')
+    criterion = torch.nn.MSELoss()
     return model, optimizer, criterion
 
 
