@@ -5,8 +5,9 @@ import pandas as pd
 
 import torch
 from torch import nn
-from types import SimpleNamespace
 
+import pickle
+from types import SimpleNamespace
 from time import time, strftime, gmtime
 
 from sklearn.preprocessing import MinMaxScaler
@@ -24,10 +25,10 @@ params = SimpleNamespace(
     valid_data = f'{DATASET_DIR}valid_data.h5',
     test_data = f'{DATASET_DIR}test_data.h5',
     target_variables = ['Close'],
-    # target_variables = ['Open','Close'],
     predict_at_time = pd.Timedelta('00:10:00'),
+    context_length = 100,
+    target_length = 10,
     batch_size = 128,
-    sequence_length = 250,
     epochs = 4,
     hidden_size = 256,
     train = True,
@@ -38,48 +39,33 @@ params = SimpleNamespace(
 )
 
 # Read data from each dataset.
+print(f'Reading datasets from "{DATASET_DIR}" folder...')
 df_train = pd.read_hdf(params.train_data, mode='r')
 df_valid = pd.read_hdf(params.valid_data, mode='r')
 df_test = pd.read_hdf(params.test_data, mode='r')
+print(f'Loaded datasets!')
 
 # 5 by default because we use ALL variables as features: 'High','Low','Open','Close','Volume'.
 params.input_size = len(df_train.columns)
 params.output_size = len(params.target_variables)
 
-class PricesDataset(torch.utils.data.Dataset):
+def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta):
+    assert predict_at.seconds % freq.seconds == 0
+    shift_steps = predict_at.seconds // freq.seconds
+    df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars])
+    df = df[0:-shift_steps].values  # Pandas to NumPy array.
 
-    def __init__(self, df: pd.DataFrame, target_vars, shift_days, scale_x=True, seq_len=1):
-        """Init function should not do any heavy lifting, but
-            must initialize how many items are available in this data set.
-        """
-        self.shift_steps = shift_days * 60 * 24
-        # self.shift_steps = 1
-        df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-self.shift_steps) / df[target_vars])
-        self.df = df[0:-self.shift_steps].values
+    # Scale X data only.
+    scaler = MinMaxScaler((-1, 1))  # Default=(0, 1)
+    df[:, :params.input_size] = scaler.fit_transform(df[:, :params.input_size])
 
-        if scale_x:
-            X = MinMaxScaler().fit_transform(self.df[:, :-len(target_vars)])
-            self.features = torch.from_numpy(X).float()
-        else:
-            self.features = torch.from_numpy(self.df[:, :-len(target_vars)]).float()
+    return df, scaler
 
-        self.labels = torch.from_numpy(self.df[:, -len(target_vars):]).float()
-        self.seq_len = seq_len
-
-    def __len__(self):
-        """return number of points in our dataset"""
-        return self.features.__len__() - self.seq_len
-        # return len(self.df)
-
-    def __getitem__(self, index):
-        """ Here we have to return the item requested by `idx`
-            The PyTorch DataLoader class will use this method to make an iterable for
-            our training or validation loop.
-        """
-        X = self.features[index:index + self.seq_len]
-        y = self.labels[index:index + self.seq_len]
-        return X, y
-
+print(f'Adding shifted returns and scaling data...')
+df_train, scaler_train = add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+df_valid, scaler_valid = add_shifted_returns(df=df_valid, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+df_test, scaler_test = add_shifted_returns(df=df_test, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+print(f'Returns ready!')
 
 class FixedDataset(torch.utils.data.Dataset):
 
@@ -107,75 +93,18 @@ class FixedDataset(torch.utils.data.Dataset):
 
         return input, target
 
-def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta):
-    assert predict_at.seconds % freq.seconds == 0
-    shift_steps = predict_at.seconds // freq.seconds
-    df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars])
-    df = df[0:-shift_steps].values  # Pandas to NumPy array.
 
-    # Scale X data only.
-    scaler = MinMaxScaler((-1, 1))  # Default=(0, 1)
-    df[:, :params.input_size] = scaler.fit_transform(df[:, :params.input_size])
-
-    return df, scaler
-
-df_train, scaler_train = add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
-
-tr_set = FixedDataset(X = df_train[:,:params.input_size], y = df_train[:,-params.output_size:], context_length=100, target_length=10)
-
-
-
-
-
-
-tr_set = FixedDataset(X = np.arange(0,20), y = np.arange(1,21), context_length=3, target_length=2)
-
-def titem(idx):
-    X, y = tr_set.__getitem__(idx)
-    print(f'{X} \nShape: {X.shape}')
-    print(f'{y} \nShape: {y.shape}')
-
-tr_set = FixedDataset(X = df.values, y = df.values[:,3], context_length=100, target_length=10)
-tr_generator = torch.utils.data.DataLoader(tr_set, batch_size=128)  # Converts NumPy arrays to "torch.Tensor" automatically.
-
-
-X, y = next(iter(tr_generator))
-X, y = X.to(device), y.to(device)
-
-model = LSTM_Forecaster(input_size=5, hidden_size=256, output_size=params.output_size, num_layers=1, bidirectional=False).to(device)
-
-out = model(X.float())
-print(f'                    BATCH #1')
-print(f'Input X shape:      {X.shape}')
-print(f'Output model shape: {out.shape}')
-print(f'Targets y shape:    {y.shape}')
-
-criterion = torch.nn.MSELoss(reduction='mean')
-criterion = torch.nn.MSELoss()
-loss = criterion(out[:,-10:], y)
-# loss = criterion(out[:,-10:], torch.reshape(y, (y.shape[0], y.shape[1], 1)))
-loss
-
-kk = 0
-for i, (data, target) in enumerate(tr_generator):
-    #print(f'Batch num: {i}')
-    #print(f'{data} \nShape: {data.shape}')
-    #print(f'{target} \nShape: {target.shape}')
-    kk += 1
-    if i == 7893:
-        print(i)
-print(kk)
-
-training_set = PricesDataset(df=df_train, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
+training_set = FixedDataset(X = df_train[:,:params.input_size], y = df_train[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
 training_generator = torch.utils.data.DataLoader(training_set, batch_size=params.batch_size)
 
-validation_set = PricesDataset(df=df_valid, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
+validation_set = FixedDataset(X = df_valid[:,:params.input_size], y = df_valid[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
 validation_generator = torch.utils.data.DataLoader(validation_set, batch_size=params.batch_size)
 
-test_set = PricesDataset(df=df_test, target_vars=params.target_variables, shift_days=params.days_prediction, seq_len=params.sequence_length)
+test_set = FixedDataset(X = df_test[:,:params.input_size], y = df_test[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
 test_generator = torch.utils.data.DataLoader(test_set, batch_size=params.batch_size)
 
 
+torch.set_default_tensor_type('torch.DoubleTensor')
 # Select device
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -216,7 +145,7 @@ def train(model, optimizer, criterion, train_generator, log=False):
         # Clears old gradients from the last step (otherwise you’d just accumulate the gradients from all loss.backward() calls)
         model.zero_grad()
         output = model(X)
-        loss = criterion(output, y)
+        loss = criterion(output[:, -params.target_length:], y)  # We only take into account the last "n-target" samples of the sequence.
         # Computes the derivative of the loss w.r.t. the parameters (or anything requiring gradients) using backpropagation.
         loss.backward()
         # Causes the optimizer to take a step based on the gradients of the parameters.
@@ -248,7 +177,7 @@ def validate(model, criterion, valid_generator):
         for X, y in valid_generator:
             X, y = X.to(device), y.to(device)
             output = model(X)
-            loss = criterion(output, y)
+            loss = criterion(output[:, -params.target_length:], y)
 
             total_loss += loss.item()
             niterations += 1
@@ -266,8 +195,8 @@ def get_model():
                             num_layers = params.num_layers,
                             bidirectional = params.bidirectional).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr = params.lr)
-    #criterion = torch.nn.MSELoss(reduction='sum')
-    criterion = torch.nn.MSELoss()
+    criterion = torch.nn.MSELoss(reduction='sum')
+    # criterion = torch.nn.MSELoss()
     return model, optimizer, criterion
 
 
@@ -313,6 +242,18 @@ for epoch in range(1, epochs + 1):
 end = time()
 total_time = end - start
 print(f'Time elapsed: {strftime("%H:%M:%S", gmtime(time()-start))}')
+
+
+# Save measurements.
+
+measures = {}
+measures['training_losses'] = training_losses
+measures['train_loss'] = train_loss
+measures['valid_loss'] = valid_loss
+measures['time_per_epoch'] = time_per_epoch
+
+with open(f'stats/{model_name}_stats.pickle', 'wb') as f:
+    pickle.dump(measures, f)
 
 
 
