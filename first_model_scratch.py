@@ -136,8 +136,12 @@ def titem(idx):
     print(f'{y} \nShape: {y.shape}')
 
 tr_set = FixedDataset(X = df.values, y = df.values[:,3], context_length=100, target_length=10)
-tr_generator = torch.utils.data.DataLoader(tr_set, batch_size=128)  # Converts NumPy arrays to "torch.Tensor" automatically.
+tr_generator = torch.utils.data.DataLoader(tr_set, batch_size=3, shuffle=True)  # Converts NumPy arrays to "torch.Tensor" automatically.
 
+for i, (X, y) in enumerate(tr_generator):
+    print(f'BATCH NUMBER {i}')
+    print(f'X: {X}')
+    print(f'y: {y}')
 
 X, y = next(iter(tr_generator))
 X, y = X.to(device), y.to(device)

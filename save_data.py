@@ -10,17 +10,13 @@ from time import time, strftime, gmtime
 from loader import *
 from bars import *
 
-DATASET_DIR = 'sample_data/'
 DATASET_PREFIX = 'BTCUSD'
-SAVE_DATA = ''
 
 params = SimpleNamespace(
     intraday_freq = pd.Timedelta('00:01:00'),
-    target_vars = ['Close'],
     train_date = ('2017-05', '2019-07'),
     valid_date = ('2019-07', '2020-01'),
-    test_date  = ('2020-01', '2020-10'),
-    sample_date = ('2017-05', '2017-06')
+    test_date  = ('2020-01', '2020-10')
 )
 
 def average_ask_bid(df):
