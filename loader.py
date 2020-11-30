@@ -5,6 +5,7 @@ import pandas as pd
 def df_read(path):
     try:
         df = pd.read_hdf(path)
+        print(path)
     except FileNotFoundError:
         path = os.path.splitext(path)[0] + '.pkl'
         df = pd.read_pickle(path)

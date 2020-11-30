@@ -1,9 +1,15 @@
 
 # Execute script on SSH Server.
-nohup python3 train.py > train.log &
+nohup python3 [COMMAND] > [PRINT OUTPUT] &
+
+# Train model.
+nohup python3 first_model.py > logs/NAME.log &
+
 
 # Save data script.
-python3 save_data.py ../../footanalytics/projects/data/dukascopy/ datasets_1m/
+nohup python3 save_data.py > stats.log &
+mv stats.log datasets_XX_sec/
+
 
 # Check GPU memory.
 watch -n0.1 nvidia-smi

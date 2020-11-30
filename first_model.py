@@ -16,7 +16,7 @@ from sklearn.preprocessing import MinMaxScaler
 from loader import *
 from bars import *
 
-DATASET_DIR = 'datasets_1m/'
+DATASET_DIR = 'datasets_60_sec/'
 DATASET_PREFIX = 'BTCUSD'
 MODEL_DIR = 'weights/'
 
@@ -58,7 +58,7 @@ def read_all_hdf(files):
     for part, file in zip(['train', 'valid', 'test'], files):
         df = pd.read_hdf(file, mode='r')
         data.append(df)
-        print(f'Number of samples ({part:>5}): {len(df):,}')
+        print(f'Number of samples ({part:>5}): {len(df):>11,}')
     print(f'Columns: {list(df.columns)}')
     return data[0], data[1], data[2]
 
@@ -69,19 +69,22 @@ df_train, df_valid, df_test = read_all_hdf([params.train_data, params.valid_data
 params.input_size = len(df_train.columns)
 params.output_size = len(params.target_variables)
 
-def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta):
+def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta, scale=True):
     assert predict_at.seconds % freq.seconds == 0
     shift_steps = predict_at.seconds // freq.seconds
     df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars])
     df = df[0:-shift_steps].values  # Pandas to NumPy array.
 
-    # Scale X data only.
-    scaler = MinMaxScaler((-1, 1))  # Default=(0, 1)
-    df[:, :params.input_size] = scaler.fit_transform(df[:, :params.input_size])
+    if scale:
+        # Scale X data only.
+        scaler = MinMaxScaler((-1, 1))  # Default=(0, 1)
+        df[:, :params.input_size] = scaler.fit_transform(df[:, :params.input_size])
+        return df, scaler
 
-    return df, scaler
+    return df, None
 
-msg('Add shifted returns and scaling data ')
+
+msg('Add shifted returns and scaling data')
 df_train, scaler_train = add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
 df_valid, scaler_valid = add_shifted_returns(df=df_valid, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
 df_test, scaler_test = add_shifted_returns(df=df_test, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
@@ -149,6 +152,13 @@ class LSTM_Forecaster(torch.nn.Module):
         return output
 
 
+def adjust_learning_rate(optimizer, epoch, n=30):
+    """Sets the learning rate to the initial LR decayed by 10 every "n" epochs"""
+    lr = params.lr * (0.1 ** (epoch // n))
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    print(f'learning rate adjusted to: {lr:>6}')
+
 
 training_losses = []
 
@@ -188,7 +198,8 @@ def train(model, optimizer, criterion, train_generator, log=False):
         if log:
             print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.1f}%, loss={loss.item():.2f}')
 
-    total_loss = total_loss / niterations
+    # total_loss = total_loss / niterations
+    total_loss = total_loss / nelements     ## CHANGED!!!
     accuracy = ncorrect / nelements * 100
 
     return accuracy, total_loss
@@ -270,6 +281,8 @@ for epoch in range(1, epochs + 1):
     valid_accuracy.append(acc)
     valid_loss.append(loss)
     print(f'| epoch {epoch:03d} | valid accuracy={acc:.1f}%, valid loss={loss:.2f}')
+
+    adjust_learning_rate(optimizer, epoch, 1)
 
     time_per_epoch.append(time() - start)
     print(f'---------------------------------| end epoch {epoch:03d} | time {strftime("%H:%M:%S", gmtime(time()-start))} |---------------------------------')
