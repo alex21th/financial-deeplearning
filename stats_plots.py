@@ -1,7 +1,6 @@
 
 
-import pandas as pd
-import matplotlib.pyplot as plt
+
 
 # DATA EXPLORATION
 
@@ -12,7 +11,7 @@ plt.show()
 
 # MODEL METRICS
 
-model_name = 'full_network_10epoch'
+model_name = 'full_network_11epoch'
 filepath = f'stats/{model_name}_stats.pickle'
 
 d = pd.read_pickle(filepath)

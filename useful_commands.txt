@@ -20,7 +20,7 @@ globals().clear()
 ## PyTorch
 
 # See shape of DataLoader object.
-data, target = next(iter(dataloader))
-print(data.shape)
-print(target.shape)
+X, y = next(iter(dataloader))
+print(X.shape)
+print(y.shape)
 

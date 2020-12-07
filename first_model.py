@@ -29,14 +29,14 @@ params = SimpleNamespace(
     predict_at_time = pd.Timedelta('00:10:00'),
     context_length = 200,
     target_length = 20,
-    batch_size = 128,
+    batch_size = 64,
     epochs = 10,
-    hidden_size = 512,
+    hidden_size = 32,
     train = True,
     num_layers = 1,
     bidirectional = False,
     lr = 0.001,
-    modelname = f'{MODEL_DIR}.pt'
+    modelname = 'batch_64_hidden_32'
 )
 
 def msg(text='', width=78, sym='─'):
@@ -185,21 +185,21 @@ def train(model, optimizer, criterion, train_generator, log=False):
         ncorrect += torch.sum(torch.sign(output_target) == torch.sign(y)).item()
         nelements += y.numel()
 
-        # np.abs(np.abs(lala) - np.abs(lele)) <= 1
-
         # Training statistics
         total_loss += loss.item()
         niterations += 1
-        if niterations == 200 or niterations == 500 or niterations % 1000 == 0:
-            print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.1f}%, loss={loss.item():.2f}')
+        # if niterations == 200 or niterations == 500 or niterations % 1000 == 0:
+        #     print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.2f}%, loss={loss.item():.3f}')
 
         training_losses.append(loss.item())
 
         if log:
-            print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.1f}%, loss={loss.item():.2f}')
+            print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.2f}%, loss={loss.item():.3f}')
 
+    print(f'LA LOSS BIEN? nelements: {nelements} VS len_TR_generator: {len(train_generator)}')
     # total_loss = total_loss / niterations
     total_loss = total_loss / nelements     ## CHANGED!!!
+    # total_loss = total_loss / len(train_generator)
     accuracy = ncorrect / nelements * 100
 
     return accuracy, total_loss
@@ -224,7 +224,8 @@ def validate(model, criterion, valid_generator):
             total_loss += loss.item()
             niterations += 1
 
-    total_loss = total_loss / niterations
+    # total_loss = total_loss / niterations
+    total_loss = total_loss / nelements  ## CHANGED!!!
     accuracy = ncorrect / nelements * 100
 
     return accuracy, total_loss
@@ -271,23 +272,29 @@ time_per_epoch = []
 msg(f'Training model and validation for {epochs} epochs')
 start = time()
 
+base_loss_train = np.power(training_set.y*100, 2).mean()
+print(f'BASELINE training loss (based on MSE): {base_loss_train:.2f}')
+base_loss_valid = np.power(validation_set.y*100, 2).mean()
+print(f'BASELINE validation loss (based on MSE): {base_loss_valid:.2f}')
+
 for epoch in range(1, epochs + 1):
+    print(f'training_generator len: {len(training_generator)}')
     acc, loss = train(model, optimizer, criterion, training_generator)
     train_accuracy.append(acc)
     train_loss.append(loss)
-    print(f'| epoch {epoch:03d} | train accuracy={acc:.1f}%, train loss={loss:.2f}')
+    print(f'| epoch {epoch:03d} | train accuracy={acc:.2f}%, train loss={loss:.6f}')
 
     acc, loss = validate(model, criterion, validation_generator)
     valid_accuracy.append(acc)
     valid_loss.append(loss)
-    print(f'| epoch {epoch:03d} | valid accuracy={acc:.1f}%, valid loss={loss:.2f}')
+    print(f'| epoch {epoch:03d} | valid accuracy={acc:.2f}%, valid loss={loss:.6f}')
 
-    adjust_learning_rate(optimizer, epoch, 1)
+    adjust_learning_rate(optimizer, epoch, 4)
 
     time_per_epoch.append(time() - start)
     print(f'---------------------------------| end epoch {epoch:03d} | time {strftime("%H:%M:%S", gmtime(time()-start))} |---------------------------------')
 
-    model_name = f'full_network_{epoch}epoch'
+    model_name = f'{params.modelname}_{epoch}epoch'
     torch.save(model.state_dict(), f'weights/{model_name}.pt')
 
 end = time()
@@ -319,14 +326,26 @@ plt.plot(measures['train_loss'], label = 'train loss')
 plt.plot(measures['valid_loss'], label = 'valid loss')
 plt.legend(loc='upper right')
 plt.title(f'{model_name} LOSS PER EPOCH')
-plt.savefig(f'{plots_dir}{model_name}_LOSS_PLOT.png')
 plt.show()
+plt.savefig(f'{plots_dir}{model_name}_LOSS_PLOT.png')
+plt.clf()
 
+plt.plot(measures['train_accuracy'], label = 'train accuracy')
+plt.plot(measures['valid_accuracy'], label = 'valid accuracy')
+plt.legend(loc='upper right')
+plt.title(f'{model_name} ACCURACY PER EPOCH')
+plt.show()
+plt.savefig(f'{plots_dir}{model_name}_ACCURACY_PLOT.png')
+plt.clf()
 
 plt.plot(measures['training_losses'], label = 'train loss')
 plt.legend(loc='upper right')
 plt.title(f'{model_name} LOSS PER TRAINING ITERATION')
-plt.savefig(f'{plots_dir}{model_name}_LOSS_PLOT_ITER.png')
 plt.show()
+plt.savefig(f'{plots_dir}{model_name}_LOSS_PLOT_ITER.png')
+plt.clf()
+
+
+
 
 
