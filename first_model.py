@@ -10,6 +10,8 @@ from torch import nn
 import pickle
 from types import SimpleNamespace
 from time import time, strftime, gmtime
+import random
+import argparse
 
 from sklearn.preprocessing import MinMaxScaler
 
@@ -27,8 +29,8 @@ params = SimpleNamespace(
     test_data = f'{DATASET_DIR}test_data.h5',
     target_variables = ['Close'],
     predict_at_time = pd.Timedelta('00:10:00'),
-    context_length = 200,
-    target_length = 20,
+    context_length = 100,
+    target_length = 10,
     batch_size = 64,
     epochs = 10,
     hidden_size = 32,
@@ -36,8 +38,30 @@ params = SimpleNamespace(
     num_layers = 1,
     bidirectional = False,
     lr = 0.001,
-    modelname = 'batch_64_hidden_32'
+    adjust_lr = 5,
+    modelname = 'batch_64_hidden_32',
+    seed = 2104
 )
+
+custom_params = ['context_length','target_length','batch_size','epochs','hidden_size','num_layers','adjust_lr']
+parser = argparse.ArgumentParser()
+for p in custom_params:
+    parser.add_argument(f'--{p}', default=params.__dict__[p], type=int)
+args = parser.parse_args()
+for p in custom_params:
+    params.__dict__[p] = args.__dict__[p]
+
+params.modelname = f'c{params.context_length}_t{params.target_length}_b{params.batch_size}_h{params.hidden_size}_e{params.epochs}'
+
+# Fix random seed for reproducibility
+def seed_everything(seed=43):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+seed_everything(params.seed)
 
 def msg(text='', width=78, sym='─'):
     print('')
@@ -72,7 +96,7 @@ params.output_size = len(params.target_variables)
 def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta, scale=True):
     assert predict_at.seconds % freq.seconds == 0
     shift_steps = predict_at.seconds // freq.seconds
-    df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars])
+    df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars]) * 100
     df = df[0:-shift_steps].values  # Pandas to NumPy array.
 
     if scale:
@@ -196,7 +220,6 @@ def train(model, optimizer, criterion, train_generator, log=False):
         if log:
             print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.2f}%, loss={loss.item():.3f}')
 
-    print(f'LA LOSS BIEN? nelements: {nelements} VS len_TR_generator: {len(train_generator)}')
     # total_loss = total_loss / niterations
     total_loss = total_loss / nelements     ## CHANGED!!!
     # total_loss = total_loss / len(train_generator)
@@ -253,6 +276,7 @@ for name, param in model.named_parameters():
     print(f'{name:20} {param.numel()} {list(param.shape)}')
 print(f'TOTAL                {sum(p.numel() for p in model.parameters())}')
 
+msg(params.modelname)
 
 if device.type == 'cuda':
     msg('GPU INFO')
@@ -272,13 +296,12 @@ time_per_epoch = []
 msg(f'Training model and validation for {epochs} epochs')
 start = time()
 
-base_loss_train = np.power(training_set.y*100, 2).mean()
+base_loss_train = np.power(training_set.y, 2).mean()
 print(f'BASELINE training loss (based on MSE): {base_loss_train:.2f}')
-base_loss_valid = np.power(validation_set.y*100, 2).mean()
+base_loss_valid = np.power(validation_set.y, 2).mean()
 print(f'BASELINE validation loss (based on MSE): {base_loss_valid:.2f}')
 
 for epoch in range(1, epochs + 1):
-    print(f'training_generator len: {len(training_generator)}')
     acc, loss = train(model, optimizer, criterion, training_generator)
     train_accuracy.append(acc)
     train_loss.append(loss)
@@ -289,13 +312,15 @@ for epoch in range(1, epochs + 1):
     valid_loss.append(loss)
     print(f'| epoch {epoch:03d} | valid accuracy={acc:.2f}%, valid loss={loss:.6f}')
 
-    adjust_learning_rate(optimizer, epoch, 4)
+    adjust_learning_rate(optimizer, epoch, params.adjust_lr)
 
     time_per_epoch.append(time() - start)
     print(f'---------------------------------| end epoch {epoch:03d} | time {strftime("%H:%M:%S", gmtime(time()-start))} |---------------------------------')
 
-    model_name = f'{params.modelname}_{epoch}epoch'
-    torch.save(model.state_dict(), f'weights/{model_name}.pt')
+    # model_name = f'{params.modelname}_{epoch}epoch'
+    # torch.save(model.state_dict(), f'weights/{model_name}.pt')
+
+torch.save(model.state_dict(), f'weights/{params.modelname}.pt')
 
 end = time()
 total_time = end - start
@@ -316,7 +341,7 @@ measures['valid_loss'] = valid_loss
 
 measures['time_per_epoch'] = time_per_epoch
 
-with open(f'stats/{model_name}_stats.pickle', 'wb') as f:
+with open(f'stats/{params.modelname}_stats.pickle', 'wb') as f:
     pickle.dump(measures, f)
 
 
@@ -325,24 +350,24 @@ plots_dir = 'plots/'
 plt.plot(measures['train_loss'], label = 'train loss')
 plt.plot(measures['valid_loss'], label = 'valid loss')
 plt.legend(loc='upper right')
-plt.title(f'{model_name} LOSS PER EPOCH')
+plt.title(f'{params.modelname} LOSS PER EPOCH')
 plt.show()
-plt.savefig(f'{plots_dir}{model_name}_LOSS_PLOT.png')
+plt.savefig(f'{plots_dir}{params.modelname}_LOSS_PLOT.png')
 plt.clf()
 
 plt.plot(measures['train_accuracy'], label = 'train accuracy')
 plt.plot(measures['valid_accuracy'], label = 'valid accuracy')
 plt.legend(loc='upper right')
-plt.title(f'{model_name} ACCURACY PER EPOCH')
+plt.title(f'{params.modelname} ACCURACY PER EPOCH')
 plt.show()
-plt.savefig(f'{plots_dir}{model_name}_ACCURACY_PLOT.png')
+plt.savefig(f'{plots_dir}{params.modelname}_ACCURACY_PLOT.png')
 plt.clf()
 
 plt.plot(measures['training_losses'], label = 'train loss')
 plt.legend(loc='upper right')
-plt.title(f'{model_name} LOSS PER TRAINING ITERATION')
+plt.title(f'{params.modelname} LOSS PER TRAINING ITERATION')
 plt.show()
-plt.savefig(f'{plots_dir}{model_name}_LOSS_PLOT_ITER.png')
+plt.savefig(f'{plots_dir}{params.modelname}_LOSS_PLOT_ITER.png')
 plt.clf()
 
 

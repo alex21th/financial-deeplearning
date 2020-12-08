@@ -20,7 +20,6 @@ params = SimpleNamespace(
     # train_date = ('2017-05', '2019-07'),
     # valid_date = ('2019-07', '2020-01'),
     # test_date  = ('2020-01', '2020-10')
-cd
     train_date = ('2017-05', '2020-01'),
     valid_date = ('2020-01', '2020-07'),
     test_date  = ('2020-07', '2020-10')
