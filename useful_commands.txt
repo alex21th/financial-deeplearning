@@ -24,3 +24,9 @@ X, y = next(iter(dataloader))
 print(X.shape)
 print(y.shape)
 
+# Run ".sh" file script.
+chmod +x trains.sh
+./trains.sh
+
+# PyCharm view function arguments.
+"control"+"J"

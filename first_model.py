@@ -37,10 +37,11 @@ params = SimpleNamespace(
     train = True,
     num_layers = 1,
     bidirectional = False,
-    lr = 0.001,
+    lr = 0.0001,  # 0.001
     adjust_lr = 5,
     modelname = 'batch_64_hidden_32',
-    seed = 2104
+    seed = 2104,
+    acc_th = 1
 )
 
 custom_params = ['context_length','target_length','batch_size','epochs','hidden_size','num_layers','adjust_lr']
@@ -51,7 +52,7 @@ args = parser.parse_args()
 for p in custom_params:
     params.__dict__[p] = args.__dict__[p]
 
-params.modelname = f'c{params.context_length}_t{params.target_length}_b{params.batch_size}_h{params.hidden_size}_e{params.epochs}'
+params.modelname = f'lr0.0001_TH_c{params.context_length}_t{params.target_length}_b{params.batch_size}_h{params.hidden_size}_e{params.epochs}'
 
 # Fix random seed for reproducibility
 def seed_everything(seed=43):
@@ -151,6 +152,9 @@ validation_generator = torch.utils.data.DataLoader(validation_set, batch_size=pa
 test_set = FixedDataset(X = df_test[:,:params.input_size], y = df_test[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
 test_generator = torch.utils.data.DataLoader(test_set, batch_size=params.batch_size)
 
+print(f'  Training sequences: {len(training_generator.dataset):>11,}')
+print(f'Validation sequences: {len(validation_generator.dataset):>11,}')
+print(f'      Test sequences: {len(test_generator.dataset):>11,}')
 
 torch.set_default_tensor_type('torch.DoubleTensor')
 # Select device
@@ -192,6 +196,7 @@ def train(model, optimizer, criterion, train_generator, log=False):
     niterations = 0
     ncorrect = 0
     nelements = 0
+    predictions = []
     for X, y in train_generator:
 
         X, y = X.to(device), y.to(device)
@@ -217,6 +222,9 @@ def train(model, optimizer, criterion, train_generator, log=False):
 
         training_losses.append(loss.item())
 
+        # output_target = output_target.detach().numpy()
+        predictions.append(output_target.detach().cpu().numpy())
+
         if log:
             print(f'Train: iteration_number={niterations}, accuracy={ncorrect / nelements * 100:.2f}%, loss={loss.item():.3f}')
 
@@ -225,7 +233,7 @@ def train(model, optimizer, criterion, train_generator, log=False):
     # total_loss = total_loss / len(train_generator)
     accuracy = ncorrect / nelements * 100
 
-    return accuracy, total_loss
+    return accuracy, total_loss, predictions
 
 
 def validate(model, criterion, valid_generator):
@@ -234,6 +242,7 @@ def validate(model, criterion, valid_generator):
     niterations = 0
     ncorrect = 0
     nelements = 0
+    predictions = []
     with torch.no_grad():
         for X, y in valid_generator:
             X, y = X.to(device), y.to(device)
@@ -247,11 +256,14 @@ def validate(model, criterion, valid_generator):
             total_loss += loss.item()
             niterations += 1
 
+            # output_target = output_target.detach().numpy()
+            predictions.append(output_target.detach().cpu().numpy())
+
     # total_loss = total_loss / niterations
     total_loss = total_loss / nelements  ## CHANGED!!!
     accuracy = ncorrect / nelements * 100
 
-    return accuracy, total_loss
+    return accuracy, total_loss, predictions
 
 
 
@@ -286,6 +298,26 @@ if device.type == 'cuda':
     print('Cached:   ', round(torch.cuda.memory_cached(0)/1024**3,1), 'GB')
 
 
+# Needed to compute "threshold_accuracy".
+def get_Ys(generator):
+    y_values = []
+    for X, y in generator:
+        y_values.append(y)
+    y_values = np.concatenate(y_values).flatten()
+    return y_values
+
+msg("Collecting y's")
+y_train = get_Ys(training_generator)
+y_valid = get_Ys(validation_generator)
+y_test = get_Ys(test_generator)
+
+def threshold_accuracy(pred, y, pct=1):
+    pred = np.concatenate(pred).flatten()
+    threshold = np.percentile(np.sort(np.abs(pred)), 100-pct)
+    mask = np.abs(pred) >= threshold
+    print(sum(mask))
+    acc_th = np.sum(np.sign(pred[mask]) == np.sign(y[mask])) / len(pred[mask]) * 100
+    return acc_th
 
 epochs = params.epochs
 train_accuracy = []
@@ -302,15 +334,17 @@ base_loss_valid = np.power(validation_set.y, 2).mean()
 print(f'BASELINE validation loss (based on MSE): {base_loss_valid:.2f}')
 
 for epoch in range(1, epochs + 1):
-    acc, loss = train(model, optimizer, criterion, training_generator)
+    acc, loss, predictions = train(model, optimizer, criterion, training_generator)
     train_accuracy.append(acc)
     train_loss.append(loss)
-    print(f'| epoch {epoch:03d} | train accuracy={acc:.2f}%, train loss={loss:.6f}')
+    acc_th = threshold_accuracy(predictions, y_train, params.acc_th)
+    print(f'| epoch {epoch:03d} | train accuracy={acc:.2f}%, train loss={loss:.6f} | acc_threshold={acc_th:.2f}')
 
-    acc, loss = validate(model, criterion, validation_generator)
+    acc, loss, predictions = validate(model, criterion, validation_generator)
     valid_accuracy.append(acc)
     valid_loss.append(loss)
-    print(f'| epoch {epoch:03d} | valid accuracy={acc:.2f}%, valid loss={loss:.6f}')
+    acc_th = threshold_accuracy(predictions, y_valid, params.acc_th)
+    print(f'| epoch {epoch:03d} | valid accuracy={acc:.2f}%, valid loss={loss:.6f} | acc_threshold={acc_th:.2f}')
 
     adjust_learning_rate(optimizer, epoch, params.adjust_lr)
 
