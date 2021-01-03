@@ -18,9 +18,15 @@ from sklearn.preprocessing import MinMaxScaler
 from loader import *
 from bars import *
 
+from ta.volatility import BollingerBands
+from ta.momentum import RSIIndicator, StochasticOscillator
+from ta.trend import MACD
+
 DATASET_DIR = 'datasets_60_sec/'
 DATASET_PREFIX = 'BTCUSD'
-MODEL_DIR = 'weights/'
+MODEL_DIR = 'new_weights/'
+STATS_DIR = 'new_stats/'
+PLOTS_DIR = 'new_plots/'
 
 params = SimpleNamespace(
     intraday_freq = pd.Timedelta('00:01:00'),
@@ -28,11 +34,12 @@ params = SimpleNamespace(
     valid_data = f'{DATASET_DIR}valid_data.h5',
     test_data = f'{DATASET_DIR}test_data.h5',
     target_variables = ['Close'],
+    technical_indicators = False,
     predict_at_time = pd.Timedelta('00:10:00'),
     context_length = 100,
     target_length = 10,
     batch_size = 64,
-    epochs = 10,
+    epochs = 3,
     hidden_size = 32,
     train = True,
     num_layers = 1,
@@ -44,15 +51,28 @@ params = SimpleNamespace(
     acc_th = 1
 )
 
-custom_params = ['context_length','target_length','batch_size','epochs','hidden_size','num_layers','adjust_lr']
+custom_params = ['context_length','target_length','batch_size','epochs','hidden_size','num_layers','adjust_lr','seed']
 parser = argparse.ArgumentParser()
 for p in custom_params:
     parser.add_argument(f'--{p}', default=params.__dict__[p], type=int)
+parser.add_argument(f'--lr', default=params.lr, type=float)
+parser.add_argument(f'--modelname', default=params.modelname, type=str)
+
+def boolean_string(s):
+    if s not in {'False', 'True'}:
+        raise ValueError('Not a valid boolean string')
+    return s == 'True'
+
+parser.add_argument('--technical_indicators', default=params.technical_indicators, type=boolean_string, help='Bool type')
+
 args = parser.parse_args()
 for p in custom_params:
     params.__dict__[p] = args.__dict__[p]
+params.lr = args.lr
+params.modelname = args.modelname
+params.technical_indicators = args.technical_indicators
 
-params.modelname = f'lr0.0001_TH_c{params.context_length}_t{params.target_length}_b{params.batch_size}_h{params.hidden_size}_e{params.epochs}'
+# params.modelname = f'c{params.context_length}_t{params.target_length}_b{params.batch_size}_h{params.hidden_size}_e{params.epochs}'
 
 # Fix random seed for reproducibility
 def seed_everything(seed=43):
@@ -90,36 +110,68 @@ def read_all_hdf(files):
 msg(f'Load datasets from "{DATASET_DIR}"')
 df_train, df_valid, df_test = read_all_hdf([params.train_data, params.valid_data, params.test_data])
 
-# 5 by default because we use ALL variables as features: 'High','Low','Open','Close','Volume'.
-params.input_size = len(df_train.columns)
-params.output_size = len(params.target_variables)
 
-def add_shifted_returns(df, target_vars, predict_at: pd.Timedelta, freq: pd.Timedelta, scale=True):
+def add_shifted_returns(df: pd.DataFrame, target_vars: list, predict_at: pd.Timedelta, freq: pd.Timedelta):
     assert predict_at.seconds % freq.seconds == 0
     shift_steps = predict_at.seconds // freq.seconds
     df[['y_' + y for y in target_vars]] = np.log(df[target_vars].shift(-shift_steps) / df[target_vars]) * 100
-    df = df[0:-shift_steps].values  # Pandas to NumPy array.
-
-    if scale:
-        # Scale X data only.
-        scaler = MinMaxScaler((-1, 1))  # Default=(0, 1)
-        df[:, :params.input_size] = scaler.fit_transform(df[:, :params.input_size])
-        return df, scaler
-
-    return df, None
+    df.dropna(inplace=True)  # We miss the first n-"predict_at" samples. (10 samples)
+    return
 
 
-msg('Add shifted returns and scaling data')
-df_train, scaler_train = add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
-df_valid, scaler_valid = add_shifted_returns(df=df_valid, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
-df_test, scaler_test = add_shifted_returns(df=df_test, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+msg('Add shifted returns')
+add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+add_shifted_returns(df=df_valid, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+add_shifted_returns(df=df_test, target_vars=params.target_variables, predict_at=params.predict_at_time, freq=params.intraday_freq)
+print(f'Columns: {list(df_train.columns)}')
+
+def add_technical_indicators(df, window):
+    indicator_bb = BollingerBands(close=df['Close'], n=window, ndev=2)
+    indicator_rsi = RSIIndicator(close=df['Close'], n=window)
+    indicator_macd = MACD(close=df['Close'], n_slow=window, n_fast=window//4, n_sign=window//11)
+    indicator_stoch = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], n=window, d_n=window//11)
+
+    df['bb_bbm'] = indicator_bb.bollinger_mavg()
+    df['rsi'] = indicator_rsi.rsi()
+    df['macd'] = indicator_macd.macd()
+    df['stoch'] = indicator_stoch.stoch()
+
+    df.dropna(inplace=True)  # We miss the first n-"window" samples.
+    return
+
+msg('Add technical indicators')
+if params.technical_indicators:
+    add_technical_indicators(df_train, window=60)
+    add_technical_indicators(df_valid, window=60)
+    add_technical_indicators(df_test, window=60)
+    print(f'Columns: {list(df_train.columns)}')
+else:
+    print('No')
+
+
+def scale_data(df, X_cols):
+    # Scale X data only.
+    scaler = MinMaxScaler((-1, 1))  # Default=(0, 1)
+    df[X_cols] = scaler.fit_transform(df[X_cols])
+    return scaler
+
+
+msg('Scale data')
+y_columns = ['y_' + y for y in params.target_variables]
+X_columns = [col for col in df_train.columns if col not in y_columns]
+params.input_size = len(X_columns)
+params.output_size = len(params.target_variables)
+
+scaler_train = scale_data(df_train, X_cols=X_columns)
+scaler_valid = scale_data(df_valid, X_cols=X_columns)
+scaler_test = scale_data(df_test, X_cols=X_columns)
 
 
 class FixedDataset(torch.utils.data.Dataset):
 
     def __init__(self, X, y, context_length, target_length):
-        self.X = X
-        self.y = y
+        self.X = X.values
+        self.y = y.values
         self.context_length = context_length
         self.target_length = target_length
         self.length = (self.X.shape[0] - self.context_length) // self.target_length
@@ -143,13 +195,13 @@ class FixedDataset(torch.utils.data.Dataset):
 
 
 msg('DATALOADER')
-training_set = FixedDataset(X = df_train[:,:params.input_size], y = df_train[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
+training_set = FixedDataset(X = df_train[X_columns], y = df_train[y_columns], context_length=params.context_length, target_length=params.target_length)
 training_generator = torch.utils.data.DataLoader(training_set, batch_size=params.batch_size)
 
-validation_set = FixedDataset(X = df_valid[:,:params.input_size], y = df_valid[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
+validation_set = FixedDataset(X = df_valid[X_columns], y = df_valid[y_columns], context_length=params.context_length, target_length=params.target_length)
 validation_generator = torch.utils.data.DataLoader(validation_set, batch_size=params.batch_size)
 
-test_set = FixedDataset(X = df_test[:,:params.input_size], y = df_test[:,-params.output_size:], context_length=params.context_length, target_length=params.target_length)
+test_set = FixedDataset(X = df_test[X_columns], y = df_test[y_columns], context_length=params.context_length, target_length=params.target_length)
 test_generator = torch.utils.data.DataLoader(test_set, batch_size=params.batch_size)
 
 print(f'  Training sequences: {len(training_generator.dataset):>11,}')
@@ -315,15 +367,17 @@ def threshold_accuracy(pred, y, pct=1):
     pred = np.concatenate(pred).flatten()
     threshold = np.percentile(np.sort(np.abs(pred)), 100-pct)
     mask = np.abs(pred) >= threshold
-    print(sum(mask))
+    # print(sum(mask))
     acc_th = np.sum(np.sign(pred[mask]) == np.sign(y[mask])) / len(pred[mask]) * 100
     return acc_th
 
 epochs = params.epochs
 train_accuracy = []
 train_loss = []
-valid_loss = []
+train_th_accuracy = []
 valid_accuracy = []
+valid_loss = []
+valid_th_accuracy = []
 time_per_epoch = []
 msg(f'Training model and validation for {epochs} epochs')
 start = time()
@@ -333,28 +387,35 @@ print(f'BASELINE training loss (based on MSE): {base_loss_train:.2f}')
 base_loss_valid = np.power(validation_set.y, 2).mean()
 print(f'BASELINE validation loss (based on MSE): {base_loss_valid:.2f}')
 
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [1,1,2,2,3,15], gamma=0.5)
+
 for epoch in range(1, epochs + 1):
     acc, loss, predictions = train(model, optimizer, criterion, training_generator)
     train_accuracy.append(acc)
     train_loss.append(loss)
     acc_th = threshold_accuracy(predictions, y_train, params.acc_th)
+    train_th_accuracy.append(acc_th)
     print(f'| epoch {epoch:03d} | train accuracy={acc:.2f}%, train loss={loss:.6f} | acc_threshold={acc_th:.2f}')
 
     acc, loss, predictions = validate(model, criterion, validation_generator)
     valid_accuracy.append(acc)
     valid_loss.append(loss)
     acc_th = threshold_accuracy(predictions, y_valid, params.acc_th)
+    valid_th_accuracy.append(acc_th)
     print(f'| epoch {epoch:03d} | valid accuracy={acc:.2f}%, valid loss={loss:.6f} | acc_threshold={acc_th:.2f}')
 
-    adjust_learning_rate(optimizer, epoch, params.adjust_lr)
+    # adjust_learning_rate(optimizer, epoch, params.adjust_lr)
+    for param_group in optimizer.param_groups:
+        print(f'learning rate: {param_group["lr"]}')
+    scheduler.step()
 
     time_per_epoch.append(time() - start)
     print(f'---------------------------------| end epoch {epoch:03d} | time {strftime("%H:%M:%S", gmtime(time()-start))} |---------------------------------')
 
-    # model_name = f'{params.modelname}_{epoch}epoch'
-    # torch.save(model.state_dict(), f'weights/{model_name}.pt')
+    model_name = f'{params.modelname}_{epoch}epoch'
+    torch.save(model.state_dict(), f'{MODEL_DIR}/{model_name}.pt')
 
-torch.save(model.state_dict(), f'weights/{params.modelname}.pt')
+# torch.save(model.state_dict(), f'{MODEL_DIR}/{params.modelname}.pt')
 
 end = time()
 total_time = end - start
@@ -366,42 +427,44 @@ print(f'Time elapsed: {strftime("%H:%M:%S", gmtime(time()-start))}')
 msg('SAVE MEASURES')
 measures = {}
 
-measures['train_accuracy'] = train_accuracy
 measures['training_losses'] = training_losses
+
+measures['train_accuracy'] = train_accuracy
 measures['train_loss'] = train_loss
+measures['train_th_accuracy'] = train_th_accuracy
 
 measures['valid_accuracy'] = valid_accuracy
 measures['valid_loss'] = valid_loss
+measures['valid_th_accuracy'] = valid_th_accuracy
 
 measures['time_per_epoch'] = time_per_epoch
 
-with open(f'stats/{params.modelname}_stats.pickle', 'wb') as f:
+with open(f'{STATS_DIR}/{params.modelname}_stats.pickle', 'wb') as f:
     pickle.dump(measures, f)
-
-
-plots_dir = 'plots/'
 
 plt.plot(measures['train_loss'], label = 'train loss')
 plt.plot(measures['valid_loss'], label = 'valid loss')
 plt.legend(loc='upper right')
 plt.title(f'{params.modelname} LOSS PER EPOCH')
 plt.show()
-plt.savefig(f'{plots_dir}{params.modelname}_LOSS_PLOT.png')
+plt.savefig(f'{PLOTS_DIR}{params.modelname}_LOSS_PLOT.png')
 plt.clf()
 
 plt.plot(measures['train_accuracy'], label = 'train accuracy')
 plt.plot(measures['valid_accuracy'], label = 'valid accuracy')
+plt.plot(measures['train_th_accuracy'], label = 'train th accuracy')
+plt.plot(measures['valid_th_accuracy'], label = 'valid th accuracy')
 plt.legend(loc='upper right')
 plt.title(f'{params.modelname} ACCURACY PER EPOCH')
 plt.show()
-plt.savefig(f'{plots_dir}{params.modelname}_ACCURACY_PLOT.png')
+plt.savefig(f'{PLOTS_DIR}{params.modelname}_ACCURACY_PLOT.png')
 plt.clf()
 
 plt.plot(measures['training_losses'], label = 'train loss')
 plt.legend(loc='upper right')
 plt.title(f'{params.modelname} LOSS PER TRAINING ITERATION')
 plt.show()
-plt.savefig(f'{plots_dir}{params.modelname}_LOSS_PLOT_ITER.png')
+plt.savefig(f'{PLOTS_DIR}{params.modelname}_LOSS_PLOT_ITER.png')
 plt.clf()
 
 

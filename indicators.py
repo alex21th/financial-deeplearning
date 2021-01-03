@@ -108,7 +108,7 @@ add_shifted_returns(df=df_train, target_vars=params.target_variables, predict_at
 
 # INDICATORS PART
 from ta.volatility import BollingerBands
-from ta.momentum import RSIIndicator, StochasticOscillator, ROCIndicator
+from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import MACD
 
 def add_technical_indicators(df, window):

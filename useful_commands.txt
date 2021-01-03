@@ -28,5 +28,7 @@ print(y.shape)
 chmod +x trains.sh
 ./trains.sh
 
+nohup ./trains.sh &
+
 # PyCharm view function arguments.
 "control"+"J"
