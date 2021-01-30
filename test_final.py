@@ -331,6 +331,14 @@ print(f'Threshold test accuracy (ensemble model): {test_th_accuracy}')
 
 ### GAINS
 
+len(mean_predictions)
+len(mean_predictions[136])
+mean_predictions[0][0]
+
+all_pred = np.concatenate(mean_predictions).flatten()
+len(all_pred)
+len(y_test)
+
 params = SimpleNamespace(
     intraday_freq = pd.Timedelta('00:01:00'),
     # train_date = ('2017-05', '2019-07'),
