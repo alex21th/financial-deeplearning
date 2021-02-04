@@ -1,0 +1,52 @@
+This is BibTeX, Version 0.99d (TeX Live 2018)
+Capacity: max_strings=100000, hash_size=100000, hash_prime=85009
+The top-level auxiliary file: egpaper_final.aux
+The style file: ieee_fullname.bst
+Database file #1: egbib.bib
+Warning--empty booktitle in Hossain
+Warning--empty booktitle in Nelson
+Warning--empty booktitle in Prado
+Warning--empty school in Spilak
+Warning--empty booktitle in Zhang
+You've used 17 entries,
+            2120 wiz_defined-function locations,
+            604 strings with 6272 characters,
+and the built_in function-call counts, 5418 in all, are:
+= -- 498
+> -- 265
+< -- 5
++ -- 106
+- -- 88
+* -- 345
+:= -- 884
+add.period$ -- 46
+call.type$ -- 17
+change.case$ -- 93
+chr.to.int$ -- 0
+cite$ -- 22
+duplicate$ -- 211
+empty$ -- 442
+format.name$ -- 88
+if$ -- 1152
+int.to.chr$ -- 0
+int.to.str$ -- 17
+missing$ -- 12
+newline$ -- 83
+num.names$ -- 34
+pop$ -- 133
+preamble$ -- 1
+purify$ -- 78
+quote$ -- 0
+skip$ -- 178
+stack$ -- 0
+substring$ -- 256
+swap$ -- 55
+text.length$ -- 5
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 66
+warning$ -- 5
+while$ -- 46
+width$ -- 19
+write$ -- 168
+(There were 5 warnings)

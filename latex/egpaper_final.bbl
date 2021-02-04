@@ -1,0 +1,93 @@
+\begin{thebibliography}{10}\itemsep=-1pt
+
+\bibitem{Biondo}
+Alessio~Emanuele Biondo, Alessandro Pluchino, Andrea Rapisarda, and Dirk
+  Helbing.
+\newblock Are random trading strategies more successful than technical ones?
+\newblock {\em PLoS ONE}, 8(7), Jul 2013.
+
+\bibitem{GRU}
+Kyunghyun Cho, Bart van Merrienboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi
+  Bougares, Holger Schwenk, and Yoshua Bengio.
+\newblock Learning phrase representations using rnn encoder-decoder for
+  statistical machine translation, 2014.
+
+\bibitem{random_walk}
+P.H. Cootner.
+\newblock {\em The Random Character of Stock Market Prices}.
+\newblock M.I.T. Press, 1967.
+
+\bibitem{efficient_market}
+Eugene Fama.
+\newblock Efficient capital markets: A review of theory and empirical work.
+\newblock {\em Journal of Finance}, 25:383--417, 1970.
+
+\bibitem{Schmidhuber}
+Sepp Hochreiter and Jürgen Schmidhuber.
+\newblock Long short-term memory.
+\newblock {\em Neural computation}, 9:1735--80, 12 1997.
+
+\bibitem{Hossain}
+Altaf Hossain, Faisal Zaman, M. Nasser, and M. Islam.
+\newblock Comparison of garch, neural network and support vector machine in
+  financial time series prediction.
+\newblock volume 5909, pages 597--602, 12 2009.
+
+\bibitem{Khaidem}
+Luckyson Khaidem, Snehanshu Saha, and Sudeepa~Roy Dey.
+\newblock Predicting the direction of stock market prices using random forest,
+  2016.
+
+\bibitem{bitcoin}
+Satoshi Nakamoto.
+\newblock Bitcoin: A peer-to-peer electronic cash system, 2009.
+
+\bibitem{Nelson}
+David Nelson, Adriano Pereira, and Renato de Oliveira.
+\newblock Stock market's price movement prediction with lstm neural networks.
+\newblock pages 1419--1426, 05 2017.
+
+\bibitem{Murat}
+Ahmet~Murat Ozbayoglu, Mehmet~Ugur Gudelek, and Omer~Berat Sezer.
+\newblock Deep learning for financial applications : A survey, 2020.
+
+\bibitem{vanishing}
+Razvan Pascanu, Tomas Mikolov, and Yoshua Bengio.
+\newblock On the difficulty of training recurrent neural networks, 2013.
+
+\bibitem{Prado}
+M.~L.~D. Prado.
+\newblock The 10 reasons most machine learning funds fail.
+\newblock 2017.
+
+\bibitem{Rundo}
+Francesco Rundo.
+\newblock Deep lstm with reinforcement learning layer for financial trend
+  prediction in fx high frequency trading systems.
+\newblock {\em Applied Sciences}, 9(20):4460, Oct 2019.
+
+\bibitem{Berat_Murat}
+Omer Sezer and Murat Ozbayoglu.
+\newblock Algorithmic financial trading with deep convolutional neural
+  networks: Time series to image conversion approach.
+\newblock {\em Applied Soft Computing}, 70, 04 2018.
+
+\bibitem{Spilak}
+Bruno Spilak.
+\newblock {\em Deep Neural Networks for Cryptocurrencies Price prediction}.
+\newblock PhD thesis, 06 2018.
+
+\bibitem{Vargas}
+M.~R. {Vargas}, C.~E.~M. {dos Anjos}, G.~L.~G. {Bichara}, and A.~G. {Evsukoff}.
+\newblock Deep leaming for stock market prediction using technical indicators
+  and financial news articles.
+\newblock In {\em 2018 International Joint Conference on Neural Networks
+  (IJCNN)}, pages 1--8, 2018.
+
+\bibitem{Zhang}
+Liheng Zhang, Charu Aggarwal, and Guo-Jun Qi.
+\newblock Stock price prediction via discovering multi-frequency trading
+  patterns.
+\newblock pages 2141--2149, 08 2017.
+
+\end{thebibliography}
